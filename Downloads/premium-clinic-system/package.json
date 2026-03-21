@@ -1,0 +1,28 @@
+{
+  "name": "premium-clinic-system",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "start": "turbo start",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "db:migrate": "cd packages/database && prisma migrate deploy",
+    "db:generate": "cd packages/database && prisma generate",
+    "db:seed": "cd packages/database && tsx seed.ts"
+  },
+  "devDependencies": {
+    "turbo": "^1.10.16",
+    "prettier": "^3.0.3",
+    "typescript": "^5.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "packageManager": "npm@9.0.0"
+}

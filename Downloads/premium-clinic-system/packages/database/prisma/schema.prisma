@@ -1,0 +1,497 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  DOCTOR
+  NURSE
+  RECEPTIONIST
+  LAB_TECHNICIAN
+  PHARMACIST
+  PATIENT
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  RESCHEDULED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  REFUNDED
+  CANCELLED
+  INSURANCE_PENDING
+}
+
+enum InsuranceType {
+  PRIVATE
+  GOVERNMENT
+  EMPLOYER
+  OTHER
+}
+
+enum PrescriptionStatus {
+  ACTIVE
+  DISPENSED
+  CANCELLED
+  EXPIRED
+}
+
+// Models
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  subdomain String   @unique
+  settings  Json     @default("{}")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  patients      Patient[]
+  appointments  Appointment[]
+  invoices      Invoice[]
+  inventory     InventoryItem[]
+  labOrders     LabOrder[]
+  auditLogs     AuditLog[]
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  firstName     String
+  lastName      String
+  role          UserRole
+  phone         String?
+  avatar        String?
+  emailVerified Boolean   @default(false)
+  isActive      Boolean   @default(true)
+  lastLogin     DateTime?
+  mfaSecret     String?
+  mfaEnabled    Boolean   @default(false)
+  tenantId      String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  appointments    Appointment[]    @relation("doctor")
+  patients        Patient[]        @relation("primaryDoctor")
+  medicalRecords  MedicalRecord[]  @relation("createdBy")
+  prescriptions   Prescription[]   @relation("prescribedBy")
+  auditLogs       AuditLog[]       @relation("user")
+  notifications   Notification[]   @relation("recipient")
+  messages        Message[]        @relation("sender")
+  receivedMessages Message[]        @relation("recipient")
+
+  @@unique([tenantId, email])
+}
+
+model Patient {
+  id              String          @id @default(cuid())
+  patientId       String          @unique // Format: P-YYYY-XXXXX
+  firstName       String
+  lastName        String
+  dateOfBirth     DateTime
+  gender          Gender
+  email           String?
+  phone           String
+  address         String?
+  city            String?
+  state           String?
+  zipCode         String?
+  country         String?         @default("US")
+  emergencyContact Json?          // {name, phone, relationship}
+  insuranceInfo   Json?           // Insurance details
+  medicalHistory  Json?           // Past conditions, surgeries
+  allergies       Json?           // Allergies list
+  bloodType       String?
+  maritalStatus   String?
+  occupation      String?
+  profilePhoto    String?
+  qrCode          String?         // QR code for quick access
+  tenantId        String
+  primaryDoctorId String?
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  primaryDoctor   User?            @relation("primaryDoctor", fields: [primaryDoctorId], references: [id])
+  appointments    Appointment[]
+  medicalRecords  MedicalRecord[]
+  prescriptions   Prescription[]
+  labOrders       LabOrder[]
+  invoices        Invoice[]
+  documents       Document[]
+  familyMembers   FamilyLink[]     @relation("guardian")
+  guardians       FamilyLink[]     @relation("patient")
+}
+
+model FamilyLink {
+  id          String   @id @default(cuid())
+  patientId   String   // The patient (child/dependent)
+  guardianId  String   // The guardian
+  relation    String   // Parent, Spouse, etc.
+  isPrimary   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  patient  Patient @relation("patient", fields: [patientId], references: [id])
+  guardian Patient @relation("guardian", fields: [guardianId], references: [id])
+
+  @@unique([patientId, guardianId])
+}
+
+model Appointment {
+  id              String            @id @default(cuid())
+  appointmentNumber String          @unique // Format: AP-YYYYMMDD-XXXXX
+  patientId       String
+  doctorId        String
+  tenantId        String
+  startTime       DateTime
+  endTime         DateTime
+  status          AppointmentStatus @default(SCHEDULED)
+  type            String            // Consultation, Follow-up, Surgery, etc.
+  reason          String?
+  notes           String?
+  roomId          String?
+  isTelehealth    Boolean           @default(false)
+  telehealthUrl   String?
+  recurrenceRule  Json?             // For recurring appointments
+  cancelledAt     DateTime?
+  cancellationReason String?
+  noShowAt        DateTime?
+  completedAt     DateTime?
+  createdById     String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  patient  Patient @relation(fields: [patientId], references: [id])
+  doctor   User    @relation("doctor", fields: [doctorId], references: [id])
+  tenant   Tenant  @relation(fields: [tenantId], references: [id])
+  createdBy User   @relation(fields: [createdById], references: [id])
+  reminders AppointmentReminder[]
+  vitals    VitalSign[]
+}
+
+model AppointmentReminder {
+  id            String   @id @default(cuid())
+  appointmentId String
+  type          String   // SMS, EMAIL, WHATSAPP
+  scheduledFor  DateTime
+  sentAt        DateTime?
+  status        String   // PENDING, SENT, FAILED
+  createdAt     DateTime @default(now())
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+}
+
+model MedicalRecord {
+  id            String   @id @default(cuid())
+  patientId     String
+  doctorId      String
+  tenantId      String
+  recordType    String   // SOAP_NOTE, LAB_RESULT, IMAGING, etc.
+  title         String
+  content       Json?    // Structured content based on template
+  templateId    String?
+  isConfidential Boolean  @default(false)
+  signedBy      String?
+  signedAt      DateTime?
+  attachments   Json?    // Array of file URLs
+  metadata      Json?    @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id])
+  doctor  User    @relation("createdBy", fields: [doctorId], references: [id])
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+}
+
+model VitalSign {
+  id            String   @id @default(cuid())
+  patientId     String
+  appointmentId String?
+  recordedById  String
+  bloodPressureSystolic Int?
+  bloodPressureDiastolic Int?
+  heartRate     Int?
+  temperature   Float?
+  respiratoryRate Int?
+  oxygenSaturation Int?
+  height        Float?
+  weight        Float?
+  bmi           Float?
+  painLevel     Int?     // 0-10
+  notes         String?
+  recordedAt    DateTime @default(now())
+
+  patient     Patient     @relation(fields: [patientId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  recordedBy  User        @relation(fields: [recordedById], references: [id])
+}
+
+model Prescription {
+  id              String     @id @default(cuid())
+  prescriptionNumber String   @unique
+  patientId       String
+  doctorId        String
+  tenantId        String
+  medication      String
+  dosage          String
+  frequency       String
+  route           String?    // Oral, IV, Topical, etc.
+  duration        String?
+  quantity        Int
+  refills         Int        @default(0)
+  instructions    String?
+  status          PrescriptionStatus @default(ACTIVE)
+  isControlled    Boolean    @default(false)
+  deaNumber       String?    // For controlled substances
+  dispensedById   String?
+  dispensedAt     DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  patient    Patient    @relation(fields: [patientId], references: [id])
+  doctor     User       @relation("prescribedBy", fields: [doctorId], references: [id])
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  dispensedBy User?     @relation("dispensedBy", fields: [dispensedById], references: [id])
+}
+
+model Invoice {
+  id              String        @id @default(cuid())
+  invoiceNumber   String        @unique
+  patientId       String
+  tenantId        String
+  appointmentId   String?
+  issueDate       DateTime      @default(now())
+  dueDate         DateTime
+  status          PaymentStatus @default(PENDING)
+  subtotal        Float
+  tax             Float         @default(0)
+  discount        Float         @default(0)
+  total           Float
+  paidAmount      Float         @default(0)
+  balance         Float
+  paymentMethod   String?       // CASH, CARD, INSURANCE, etc.
+  insuranceClaim  Json?         // Insurance claim details
+  notes           String?
+  metadata        Json?         @default("{}")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  patient     Patient      @relation(fields: [patientId], references: [id])
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  items       InvoiceItem[]
+  payments    Payment[]
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Int
+  unitPrice   Float
+  amount      Float
+  type        String   // SERVICE, MEDICATION, LAB, etc.
+  referenceId String?  // ID of related entity (appointment, prescription, etc.)
+  createdAt   DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  amount      Float
+  method      String   // CASH, CARD, BANK_TRANSFER, CHECK
+  reference   String?  // Transaction ID, Check Number, etc.
+  status      String   @default("COMPLETED")
+  receivedBy  String
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  invoice    Invoice @relation(fields: [invoiceId], references: [id])
+  receivedByUser User  @relation(fields: [receivedBy], references: [id])
+}
+
+model InventoryItem {
+  id              String   @id @default(cuid())
+  sku             String   @unique
+  name            String
+  description     String?
+  category        String   // MEDICATION, EQUIPMENT, SUPPLIES
+  quantity        Int      @default(0)
+  unit            String   // pieces, boxes, ml, etc.
+  reorderLevel    Int
+  reorderQuantity Int
+  costPrice       Float
+  sellingPrice    Float
+  manufacturer    String?
+  supplier        String?
+  location        String?  // Shelf, Room, etc.
+  expiryDate      DateTime?
+  batchNumber     String?
+  isActive        Boolean  @default(true)
+  tenantId        String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant     Tenant        @relation(fields: [tenantId], references: [id])
+  movements  InventoryMovement[]
+}
+
+model InventoryMovement {
+  id          String   @id @default(cuid())
+  itemId      String
+  type        String   // IN, OUT, ADJUSTMENT
+  quantity    Int
+  previousQty Int
+  newQty      Int
+  reference   String?  // PO number, Prescription ID, etc.
+  reason      String?
+  performedBy String
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  item       InventoryItem @relation(fields: [itemId], references: [id])
+  performedByUser User      @relation(fields: [performedBy], references: [id])
+}
+
+model LabOrder {
+  id              String    @id @default(cuid())
+  orderNumber     String    @unique
+  patientId       String
+  doctorId        String
+  tenantId        String
+  labTests        Json      // Array of requested tests
+  status          String    // ORDERED, COLLECTED, PROCESSING, COMPLETED, CANCELLED
+  priority        String    @default("ROUTINE") // STAT, URGENT, ROUTINE
+  collectionDate  DateTime?
+  collectionNotes String?
+  resultDate      DateTime?
+  results         Json?     // Test results
+  resultFile      String?   // PDF/File URL
+  isAbnormal      Boolean?  // Any abnormal results
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id])
+  doctor  User    @relation(fields: [doctorId], references: [id])
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  patientId   String
+  uploadedById String
+  tenantId    String
+  name        String
+  type        String   // ID, INSURANCE, CONSENT, REPORT, IMAGE
+  category    String?
+  fileUrl     String
+  fileSize    Int
+  mimeType    String
+  description String?
+  isConfidential Boolean @default(false)
+  metadata    Json?    @default("{}")
+  uploadedAt  DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  patient    Patient @relation(fields: [patientId], references: [id])
+  uploadedBy User    @relation(fields: [uploadedById], references: [id])
+  tenant     Tenant  @relation(fields: [tenantId], references: [id])
+}
+
+model Message {
+  id          String   @id @default(cuid())
+  senderId    String
+  recipientId String
+  tenantId    String
+  subject     String?
+  content     String
+  attachments Json?    // Array of file URLs
+  isRead      Boolean  @default(false)
+  readAt      DateTime?
+  isUrgent    Boolean  @default(false)
+  parentId    String?  // For replies
+  createdAt   DateTime @default(now())
+
+  sender    User    @relation("sender", fields: [senderId], references: [id])
+  recipient User    @relation("recipient", fields: [recipientId], references: [id])
+  tenant    Tenant  @relation(fields: [tenantId], references: [id])
+  parent    Message? @relation("replies", fields: [parentId], references: [id])
+  replies   Message[] @relation("replies")
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String   // APPOINTMENT_REMINDER, LAB_RESULT, MESSAGE, etc.
+  title       String
+  content     String
+  data        Json?    // Additional data
+  isRead      Boolean  @default(false)
+  readAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  user User @relation("recipient", fields: [userId], references: [id])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  tenantId    String
+  action      String   // CREATE, UPDATE, DELETE, VIEW, LOGIN, etc.
+  entity      String   // Patient, Appointment, etc.
+  entityId    String?
+  oldValue    Json?
+  newValue    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  user   User?   @relation("user", fields: [userId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+model Setting {
+  id          String   @id @default(cuid())
+  key         String
+  value       Json
+  description String?
+  category    String
+  isPublic    Boolean  @default(false)
+  tenantId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
+
+  @@unique([key, tenantId])
+}
