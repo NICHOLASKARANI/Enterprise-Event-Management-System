@@ -1,0 +1,96 @@
+mkdir -p app/views/dashboard
+cat > app/views/dashboard/index.html.erb << 'EOF'
+<div class="row">
+  <div class="col-md-8">
+    <div class="card mb-4">
+      <div class="card-header">
+        <h5>Your Projects</h5>
+      </div>
+      <div class="card-body">
+        <% if @projects.any? %>
+          <div class="list-group">
+            <% @projects.each do |project| %>
+              <%= link_to project_path(project), class: "list-group-item list-group-item-action" do %>
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <strong><%= project.name %></strong>
+                    <p class="mb-0 text-muted small"><%= truncate(project.description, length: 50) %></p>
+                  </div>
+                  <span class="badge bg-primary"><%= project.progress %>%</span>
+                </div>
+              <% end %>
+            <% end %>
+          </div>
+        <% else %>
+          <p class="text-muted">No projects yet. <%= link_to "Create your first project", new_project_path %></p>
+        <% end %>
+      </div>
+    </div>
+    
+    <div class="card">
+      <div class="card-header">
+        <h5>Recent Activity</h5>
+      </div>
+      <div class="card-body">
+        <% if @activity_logs.any? %>
+          <div class="timeline">
+            <% @activity_logs.each do |log| %>
+              <div class="mb-3">
+                <small class="text-muted"><%= time_ago_in_words(log.created_at) %> ago</small>
+                <p class="mb-0">
+                  <strong><%= log.user.full_name %></strong> <%= log.action %>
+                  <% if log.trackable %>
+                    on <%= log.trackable_type.underscore.humanize.downcase %>
+                  <% end %>
+                </p>
+              </div>
+            <% end %>
+          </div>
+        <% else %>
+          <p class="text-muted">No recent activity.</p>
+        <% end %>
+      </div>
+    </div>
+  </div>
+  
+  <div class="col-md-4">
+    <div class="card mb-4">
+      <div class="card-header">
+        <h5>Your Tasks</h5>
+      </div>
+      <div class="card-body">
+        <h6>Overdue Tasks</h6>
+        <% if @overdue_tasks.any? %>
+          <div class="list-group mb-3">
+            <% @overdue_tasks.each do |task| %>
+              <%= link_to project_task_path(task.project, task), class: "list-group-item list-group-item-action list-group-item-danger" do %>
+                <strong><%= task.title %></strong>
+                <small class="text-muted d-block">Due: <%= task.due_date %></small>
+              <% end %>
+            <% end %>
+          </div>
+        <% else %>
+          <p class="text-muted">No overdue tasks!</p>
+        <% end %>
+        
+        <h6>Recent Tasks</h6>
+        <% if @recent_tasks.any? %>
+          <div class="list-group">
+            <% @recent_tasks.each do |task| %>
+              <%= link_to project_task_path(task.project, task), class: "list-group-item list-group-item-action" do %>
+                <div class="d-flex justify-content-between">
+                  <span><%= task.title %></span>
+                  <span class="badge bg-<%= task.status_badge_color %>"><%= task.status %></span>
+                </div>
+                <small class="text-muted"><%= task.project.name %></small>
+              <% end %>
+            <% end %>
+          </div>
+        <% else %>
+          <p class="text-muted">No recent tasks.</p>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>
+EOF
