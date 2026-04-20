@@ -1,0 +1,40 @@
+# Compiled files
+*.class
+*.groovy~
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.settings/
+.project
+.classpath
+
+# Logs
+logs/
+*.log
+
+# Application specific
+src/main/resources/static/qr/
+*.png
+*.jpg
+*.jpeg
+
+# Environment variables
+.env
+application-local.yml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
