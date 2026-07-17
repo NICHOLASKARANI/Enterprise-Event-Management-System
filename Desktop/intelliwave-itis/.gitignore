@@ -1,9 +1,46 @@
-﻿node_modules/
+﻿# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production
 dist/
+build/
 .next/
+
+# Environment
 .env
 .env.local
+.env.production
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
 *.log
+npm-debug.log*
+
+# Testing
+coverage/
+
+# Turbo
 .turbo/
+
+# Docker
 docker-data/
-pnpm-lock.yaml
+
+# Prisma
+packages/database/prisma/migrations/
+
+# Misc
+*.pem
+*.key

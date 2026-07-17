@@ -1,45 +1,33 @@
-import { Controller, Post, Get, Body, UseGuards, Req } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+﻿import { Controller, Post, Get, Body, UseGuards, Req, HttpCode, HttpStatus } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { LoginDto, RegisterDto, RefreshTokenDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto } from './dto/auth.dto';
 
-@ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  @ApiOperation({ summary: 'Register new user' })
+  @HttpCode(HttpStatus.CREATED)
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
   @Post('login')
-  @ApiOperation({ summary: 'Login user' })
+  @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
 
-  @Post('refresh')
-  @ApiOperation({ summary: 'Refresh access token' })
-  async refreshToken(@Body() dto: RefreshTokenDto) {
-    return this.authService.refreshToken(dto.refreshToken);
-  }
-
   @Get('profile')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get current user profile' })
   async getProfile(@Req() req: any) {
     return this.authService.getProfile(req.user.id);
   }
 
   @Post('logout')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Logout user' })
-  async logout(@Req() req: any) {
-    return this.authService.logout(req.user.id);
+  @HttpCode(HttpStatus.OK)
+  async logout() {
+    return { message: 'Logged out successfully' };
   }
 }

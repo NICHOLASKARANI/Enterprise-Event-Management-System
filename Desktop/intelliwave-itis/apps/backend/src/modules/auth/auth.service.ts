@@ -1,9 +1,8 @@
-import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
+﻿import { Injectable, UnauthorizedException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../database/prisma.service';
-import { LoginDto, RegisterDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto } from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
@@ -12,22 +11,26 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
   ) {}
 
   async register(dto: RegisterDto) {
-    const existingUser = await this.prisma.user.findFirst({
+    this.logger.log(`Registering user: ${dto.email}`);
+
+    // Check if user exists
+    const existing = await this.prisma.user.findFirst({
       where: {
         OR: [{ email: dto.email }, { username: dto.username }],
       },
     });
 
-    if (existingUser) {
-      throw new BadRequestException('User with this email or username already exists');
+    if (existing) {
+      throw new ConflictException('User with this email or username already exists');
     }
 
+    // Hash password
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
+    // Create user
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
@@ -35,12 +38,16 @@ export class AuthService {
         passwordHash,
         firstName: dto.firstName,
         lastName: dto.lastName,
+        role: 'USER',
         status: 'ACTIVE',
         emailVerified: true,
       },
     });
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    this.logger.log(`User created: ${user.id}`);
+
+    // Generate tokens
+    const tokens = this.generateTokens(user);
 
     return {
       user: {
@@ -51,34 +58,43 @@ export class AuthService {
         lastName: user.lastName,
         role: user.role,
       },
-      ...tokens,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
     };
   }
 
   async login(dto: LoginDto) {
+    this.logger.log(`Login attempt: ${dto.email}`);
+
+    // Find user
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
 
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Invalid email or password');
     }
 
     if (user.status !== 'ACTIVE') {
       throw new UnauthorizedException('Account is not active');
     }
 
-    const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+    // Verify password
+    const isValid = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!isValid) {
+      throw new UnauthorizedException('Invalid email or password');
     }
 
+    // Update last login
     await this.prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
     });
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    this.logger.log(`Login successful: ${user.email}`);
+
+    // Generate tokens
+    const tokens = this.generateTokens(user);
 
     return {
       user: {
@@ -89,30 +105,9 @@ export class AuthService {
         lastName: user.lastName,
         role: user.role,
       },
-      ...tokens,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
     };
-  }
-
-  async refreshToken(token: string) {
-    try {
-      const payload = this.jwtService.verify(token, {
-        secret: this.configService.get('JWT_SECRET'),
-      });
-
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
-      });
-
-      if (!user || user.status !== 'ACTIVE') {
-        throw new UnauthorizedException('Invalid token');
-      }
-
-      const tokens = await this.generateTokens(user.id, user.email, user.role);
-
-      return tokens;
-    } catch (error) {
-      throw new UnauthorizedException('Invalid or expired token');
-    }
   }
 
   async getProfile(userId: string) {
@@ -128,6 +123,7 @@ export class AuthService {
         status: true,
         emailVerified: true,
         createdAt: true,
+        lastLoginAt: true,
       },
     });
 
@@ -138,22 +134,11 @@ export class AuthService {
     return user;
   }
 
-  async logout(userId: string) {
-    return { message: 'Logged out successfully' };
-  }
+  private generateTokens(user: any) {
+    const payload = { sub: user.id, email: user.email, role: user.role };
 
-  private async generateTokens(userId: string, email: string, role: string) {
-    const payload = { sub: userId, email, role };
-
-    const accessToken = await this.jwtService.signAsync(payload, {
-      secret: this.configService.get('JWT_SECRET'),
-      expiresIn: '1h',
-    });
-
-    const refreshToken = await this.jwtService.signAsync(payload, {
-      secret: this.configService.get('JWT_SECRET'),
-      expiresIn: '7d',
-    });
+    const accessToken = this.jwtService.sign(payload, { expiresIn: '1h' });
+    const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
 
     return { accessToken, refreshToken };
   }

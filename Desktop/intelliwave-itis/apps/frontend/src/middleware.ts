@@ -4,20 +4,17 @@ import type { NextRequest } from 'next/server';
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public paths
-  const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/verify-email', '/api'];
-  const isPublicPath = publicPaths.some(path => pathname.startsWith(path));
-  
-  if (isPublicPath) {
+  // Public paths - allow without auth
+  const publicPaths = ['/login', '/register', '/_next', '/favicon.ico', '/api'];
+  if (publicPaths.some(p => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
-  // Check for auth token
-  const accessToken = request.cookies.get('accessToken')?.value;
-
-  if (!accessToken) {
+  // Check for auth cookie
+  const token = request.cookies.get('accessToken')?.value;
+  
+  if (!token) {
     const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
